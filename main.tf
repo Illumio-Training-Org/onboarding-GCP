@@ -1,6 +1,45 @@
+terraform {
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 5.0"
+    }
+  }
+}
+
+###############################
+# Variables
+###############################
+
+variable "gcp_project" {
+  description = "GCP project ID"
+  type        = string
+}
+
+variable "gcp_region" {
+  default = "europe-west2"
+}
+
+variable "gcp_zone" {
+  default = "europe-west2-a"
+}
+
+variable "machine_type" {
+  default = "e2-micro"
+}
+
+variable "image_family" {
+  default = "debian-11"
+}
+
+variable "image_project" {
+  default = "debian-cloud"
+}
+
 ###############################
 # Provider
 ###############################
+
 provider "google" {
   project = var.gcp_project
   region  = var.gcp_region
@@ -8,42 +47,25 @@ provider "google" {
 }
 
 ###############################
-# 1. VPC Network
+# Network (minimal custom VPC)
 ###############################
+
 resource "google_compute_network" "main" {
   name                    = "dev-vpc"
   auto_create_subnetworks = false
 }
 
-###############################
-# 2. Subnet (with Flow Logs)
-###############################
 resource "google_compute_subnetwork" "main" {
   name          = "dev-subnet"
   ip_cidr_range = "10.0.1.0/24"
   region        = var.gcp_region
   network       = google_compute_network.main.id
-
-  log_config {
-    aggregation_interval = "INTERVAL_1_MIN"
-    flow_sampling        = 0.5
-    metadata             = "INCLUDE_ALL_METADATA"
-  }
 }
 
 ###############################
-# 3. Internet Route
+# Firewall (SSH)
 ###############################
-resource "google_compute_route" "default_internet" {
-  name             = "default-internet-route"
-  network          = google_compute_network.main.name
-  dest_range       = "0.0.0.0/0"
-  next_hop_gateway = "default-internet-gateway"
-}
 
-###############################
-# 4. Firewall (Allow SSH)
-###############################
 resource "google_compute_firewall" "ssh" {
   name    = "allow-ssh"
   network = google_compute_network.main.name
@@ -54,21 +76,30 @@ resource "google_compute_firewall" "ssh" {
   }
 
   source_ranges = ["0.0.0.0/0"]
+  target_tags   = ["ssh"]
 }
 
 ###############################
-# 5. SSH Key Pair
+# SSH Key
 ###############################
-resource "tls_private_key" "example" {
+
+resource "tls_private_key" "ssh_key" {
   algorithm = "RSA"
   rsa_bits  = 4096
 }
 
+resource "local_file" "private_key" {
+  content         = tls_private_key.ssh_key.private_key_pem
+  filename        = "${path.module}/my-keypair.pem"
+  file_permission = "0400"
+}
+
 ###############################
-# 6. Compute Engine VM
+# VM Instance
 ###############################
+
 resource "google_compute_instance" "vm" {
-  name         = "crm-vm"
+  name         = "simple-vm"
   machine_type = var.machine_type
   zone         = var.gcp_zone
 
@@ -80,36 +111,24 @@ resource "google_compute_instance" "vm" {
 
   network_interface {
     subnetwork = google_compute_subnetwork.main.id
-
-    access_config {} # assigns external IP
+    access_config {} # public IP
   }
 
   metadata = {
-    ssh-keys = "debian:${tls_private_key.example.public_key_openssh}"
+    ssh-keys = "debian:${tls_private_key.ssh_key.public_key_openssh}"
   }
 
   tags = ["ssh"]
 }
 
 ###############################
-# 7. Local private key file
+# Outputs
 ###############################
-resource "local_file" "private_key" {
-  content         = tls_private_key.example.private_key_pem
-  filename        = "${path.module}/my-keypair.pem"
-  file_permission = "0400"
+
+output "public_ip" {
+  value = google_compute_instance.vm.network_interface[0].access_config[0].nat_ip
 }
 
-###############################
-# 8. Optional post-check
-###############################
-resource "null_resource" "post_setup" {
-  provisioner "local-exec" {
-    command = "echo VM deployed with SSH key saved locally"
-  }
-
-  depends_on = [
-    google_compute_instance.vm,
-    local_file.private_key
-  ]
+output "ssh_command" {
+  value = "ssh -i my-keypair.pem debian@${google_compute_instance.vm.network_interface[0].access_config[0].nat_ip}"
 }
