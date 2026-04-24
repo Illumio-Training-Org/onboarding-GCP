@@ -7,65 +7,15 @@ terraform {
   }
 }
 
-###############################
-# Variables
-###############################
-
 variable "gcp_project" {
-  description = "GCP project ID"
-  type        = string
+  type = string
 }
-
-variable "gcp_region" {
-  default = "europe-west2"
-}
-
-variable "gcp_zone" {
-  default = "europe-west2-a"
-}
-
-variable "machine_type" {
-  default = "e2-micro"
-}
-
-variable "image_family" {
-  default = "debian-11"
-}
-
-variable "image_project" {
-  default = "debian-cloud"
-}
-
-###############################
-# Provider
-###############################
 
 provider "google" {
   project = var.gcp_project
-  region  = var.gcp_region
-  zone    = var.gcp_zone
+  region  = "europe-west2"
+  zone    = "europe-west2-a"
 }
-
-###############################
-# Firewall (SSH) - DEFAULT VPC
-###############################
-
-resource "google_compute_firewall" "ssh" {
-  name    = "allow-ssh"
-  network = "default"
-
-  allow {
-    protocol = "tcp"
-    ports    = ["22"]
-  }
-
-  source_ranges = ["0.0.0.0/0"]
-  target_tags   = ["ssh"]
-}
-
-###############################
-# SSH Key
-###############################
 
 resource "tls_private_key" "ssh_key" {
   algorithm = "RSA"
@@ -78,37 +28,26 @@ resource "local_file" "private_key" {
   file_permission = "0400"
 }
 
-###############################
-# VM Instance (DEFAULT VPC)
-###############################
-
 resource "google_compute_instance" "vm" {
   name         = "simple-vm"
-  machine_type = var.machine_type
-  zone         = var.gcp_zone
+  machine_type = "e2-micro"
+  zone         = "europe-west2-a"
 
   boot_disk {
     initialize_params {
-      image = "${var.image_project}/${var.image_family}"
+      image = "debian-cloud/debian-11"
     }
   }
 
   network_interface {
     network = "default"
-
-    access_config {} # public IP
+    access_config {}
   }
 
   metadata = {
     ssh-keys = "debian:${tls_private_key.ssh_key.public_key_openssh}"
   }
-
-  tags = ["ssh"]
 }
-
-###############################
-# Outputs
-###############################
 
 output "public_ip" {
   value = google_compute_instance.vm.network_interface[0].access_config[0].nat_ip
