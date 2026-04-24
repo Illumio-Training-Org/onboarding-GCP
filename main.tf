@@ -47,28 +47,12 @@ provider "google" {
 }
 
 ###############################
-# Network (minimal custom VPC)
-###############################
-
-resource "google_compute_network" "main" {
-  name                    = "dev-vpc"
-  auto_create_subnetworks = false
-}
-
-resource "google_compute_subnetwork" "main" {
-  name          = "dev-subnet"
-  ip_cidr_range = "10.0.1.0/24"
-  region        = var.gcp_region
-  network       = google_compute_network.main.id
-}
-
-###############################
-# Firewall (SSH)
+# Firewall (SSH) - DEFAULT VPC
 ###############################
 
 resource "google_compute_firewall" "ssh" {
   name    = "allow-ssh"
-  network = google_compute_network.main.name
+  network = "default"
 
   allow {
     protocol = "tcp"
@@ -95,7 +79,7 @@ resource "local_file" "private_key" {
 }
 
 ###############################
-# VM Instance
+# VM Instance (DEFAULT VPC)
 ###############################
 
 resource "google_compute_instance" "vm" {
@@ -110,7 +94,8 @@ resource "google_compute_instance" "vm" {
   }
 
   network_interface {
-    subnetwork = google_compute_subnetwork.main.id
+    network = "default"
+
     access_config {} # public IP
   }
 
