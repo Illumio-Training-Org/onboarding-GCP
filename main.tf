@@ -23,21 +23,16 @@ variable "gcp_project" {
   type = string
 }
 
-variable "gcp_region" {
-  default = "europe-west2"
-}
-
 variable "gcp_zone" {
   default = "europe-west2-a"
 }
 
 ###############################
-# Provider
+# Provider (NO REGION)
 ###############################
 
 provider "google" {
   project = var.gcp_project
-  region  = var.gcp_region
   zone    = var.gcp_zone
 }
 
@@ -73,8 +68,7 @@ resource "google_compute_instance" "vm" {
 
   network_interface {
     network = "default"
-
-    access_config {} # gives public IP
+    access_config {} # public IP
   }
 
   metadata = {
